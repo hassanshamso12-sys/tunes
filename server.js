@@ -16,6 +16,9 @@ const client = axios.create({
     'Referer': BASE_URL,
   },
 });
+app.get('/', (req, res) => {
+  res.send('Tunes Add-on is Running!');
+});
 
 // 1. Manifest
 app.get('/manifest.json', (req, res) => {
