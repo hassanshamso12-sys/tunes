@@ -115,6 +115,6 @@ app.get('/stream/:id', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`Tunes Add-on listening on port ${PORT}`);
 });
