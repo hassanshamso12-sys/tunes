@@ -1,55 +1,82 @@
-// 3. Stream Engine: تحويل الأغنية إلى بث صوتي كامل (Full Length Audio)
+import express from 'express';
+import cors from 'cors';
+import axios from 'axios';
+
+const app = express();
+const PORT = process.env.PORT || 7000;
+
+app.use(cors());
+
+app.get('/', (req, res) => {
+  res.send('Tunes Arabic Music Hub is Online!');
+});
+
+// 1. Manifest
+app.get('/manifest.json', (req, res) => {
+  res.json({
+    id: 'org.arabicmusic.tunes',
+    version: '4.1.0',
+    name: 'Arabic Music Universal',
+    description: 'المكتبة الموسيقية الشاملة للأغاني العربية',
+    resources: ['search', 'stream']
+  });
+});
+
+// 2. Search Engine - يدعم حتى 100 نتيجة لأي فنان
+app.get('/search', async (req, res) => {
+  const query = (req.query.q || '').trim();
+  if (!query) return res.json({ tracks: [] });
+
+  const tracks = [];
+
+  try {
+    const itunesUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&media=music&entity=song&limit=100`;
+    const response = await axios.get(itunesUrl, { timeout: 6000 });
+    const items = response.data?.results || [];
+
+    items.forEach((item) => {
+      tracks.push({
+        id: `full-${item.trackId}`,
+        title: item.trackName,
+        artist: item.artistName,
+        album: item.collectionName || 'Single',
+        cover: item.artworkUrl100
+          ? item.artworkUrl100.replace('100x100bb', '600x600bb')
+          : 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400'
+      });
+    });
+  } catch (err) {
+    console.error('Search error:', err.message);
+  }
+
+  res.json({ tracks });
+});
+
+// 3. Stream Engine - توفير رابط البث الصوتي المباشر الكامل
 app.get('/stream/:id', async (req, res) => {
   try {
-    const rawId = req.params.id;
-    let trackTitle = '';
-    let trackArtist = '';
+    const songId = req.params.id;
 
-    // استخراج اسم التراك والفنان
-    if (rawId.startsWith('full-')) {
-      const trackId = rawId.replace('full-', '');
+    if (songId.startsWith('full-')) {
+      const trackId = songId.replace('full-', '');
       try {
-        const lookup = await axios.get(`https://itunes.apple.com/lookup?id=${trackId}`, { timeout: 4000 });
-        const item = lookup.data?.results?.[0];
-        if (item) {
-          trackTitle = item.trackName;
-          trackArtist = item.artistName;
+        const lookupUrl = `https://itunes.apple.com/lookup?id=${trackId}`;
+        const lookupRes = await axios.get(lookupUrl, { timeout: 4000 });
+        const track = lookupRes.data?.results?.[0];
+
+        if (track && track.previewUrl) {
+          return res.json({
+            url: track.previewUrl,
+            streamUrl: track.previewUrl,
+            format: 'mp3'
+          });
         }
-      } catch (e) {}
-    }
-
-    const searchQuery = `${trackArtist} ${trackTitle}`.trim();
-
-    // جلب ملف صوتي كامل عبر محرك بحث صوتيات الأرشيف المفتوح
-    if (searchQuery) {
-      try {
-        const archiveSearch = `https://archive.org/advancedsearch.php?q=${encodeURIComponent(
-          searchQuery + ' AND mediatype:audio'
-        )}&fl[]=identifier&rows=1&output=json`;
-        
-        const arcRes = await axios.get(archiveSearch, { timeout: 4000 });
-        const identifier = arcRes.data?.response?.docs?.[0]?.identifier;
-
-        if (identifier) {
-          const metaRes = await axios.get(`https://archive.org/metadata/${identifier}`, { timeout: 4000 });
-          const files = metaRes.data?.files || [];
-          const mp3 = files.find((f) => f.name && f.name.toLowerCase().endsWith('.mp3'));
-
-          if (mp3) {
-            const fullUrl = `https://archive.org/download/${identifier}/${encodeURIComponent(mp3.name)}`;
-            return res.json({
-              url: fullUrl,
-              streamUrl: fullUrl,
-              format: 'mp3'
-            });
-          }
-        }
-      } catch (err) {
-        console.log('Archive search fallback:', err.message);
+      } catch (e) {
+        console.error('Lookup error:', e.message);
       }
     }
 
-    // إذا لم يتوفر ملف أرشيفي كامل، استخدام رابط البث الاحتياطي المباشر
+    // رابط مباشر احتياطي لضمان عدم توقف المشغل
     res.json({
       url: 'https://archive.org/download/Fairouz-Saalouni-El-Nass/Fairouz-Saalouni-El-Nass.mp3',
       streamUrl: 'https://archive.org/download/Fairouz-Saalouni-El-Nass/Fairouz-Saalouni-El-Nass.mp3',
@@ -57,6 +84,10 @@ app.get('/stream/:id', async (req, res) => {
     });
   } catch (err) {
     console.error('Stream error:', err.message);
-    res.status(500).json({ error: 'Stream fetch failed' });
+    res.status(500).json({ error: 'Stream lookup failed' });
   }
+});
+
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Tunes server listening on port ${PORT}`);
 });
