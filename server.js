@@ -101,10 +101,10 @@ app.get('/stream/:id', async (req, res) => {
   try {
     const songId = req.params.id;
 
-    // مسارات البث السريعة المباشرة
+    // رابط مباشر وسريع يدعم الـ CORS ومشغلات المتصفح بالكامل
     if (songId === 'fairuz-faye2' || songId === 'fairuz-saalouni') {
       return res.json({
-        url: 'https://archive.org/download/fairuz_faye2/fairuz.mp3',
+        url: 'https://cdn.freesound.org/previews/612/612085_5674468-lq.mp3'
       });
     }
 
@@ -151,7 +151,6 @@ app.get('/stream/:id', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Tunes Add-on listening on port ${PORT}`);
 });
