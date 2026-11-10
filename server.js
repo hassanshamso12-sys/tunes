@@ -7,143 +7,111 @@ const PORT = process.env.PORT || 7000;
 
 app.use(cors());
 
-// قائمة تجريبية جاهزة ومباشرة
-const LOCAL_SONGS = [
-  {
-    id: 'fairuz-1',
-    title: 'سألوني الناس',
-    artist: 'فيروز',
-    album: 'أجمل ما غنت فيروز',
-    cover: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400',
-    audioUrl: 'https://cdn.freesound.org/previews/612/612085_5674468-lq.mp3'
-  },
-  {
-    id: 'fairuz-2',
-    title: 'فايق يا هوى',
-    artist: 'فيروز',
-    album: 'أغاني زمان',
-    cover: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=400',
-    audioUrl: 'https://cdn.freesound.org/previews/612/612085_5674468-lq.mp3'
-  },
-  {
-    id: 'diab-1',
-    title: 'تملي معاك',
-    artist: 'عمرو دياب',
-    album: 'تملي معاك',
-    cover: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400',
-    audioUrl: 'https://cdn.freesound.org/previews/612/612085_5674468-lq.mp3'
-  },
-  {
-    id: 'kalthoum-1',
-    title: 'أنت عمري',
-    artist: 'أم كلثوم',
-    album: 'روائع كوكب الشرق',
-    cover: 'https://images.unsplash.com/photo-1507838153414-b4b713384a76?w=400',
-    audioUrl: 'https://cdn.freesound.org/previews/612/612085_5674468-lq.mp3'
-  }
-];
-
-// مسار الفحص السريع
 app.get('/', (req, res) => {
-  res.send('Tunes Arabic Music Server is Live!');
+  res.send('Tunes Full-Song Arabic Music Server is Live!');
 });
 
 // 1. Manifest
 app.get('/manifest.json', (req, res) => {
   res.json({
     id: 'org.arabicmusic.tunes',
-    version: '2.0.0',
-    name: 'Arabic Music Universal',
-    description: 'مكتبة الموسيقى والأغاني العربية الشاملة',
+    version: '3.0.0',
+    name: 'Arabic Music Universal (Full Tracks)',
+    description: 'المكتبة الشاملة لتشغيل الأغاني العربية الكاملة',
     resources: ['search', 'stream']
   });
 });
 
-// 2. Search: يبحث في الكتالوج ثم في محرك بحث iTunes لجلب أي فنان في العالم
+// 2. Search Engine
 app.get('/search', async (req, res) => {
   const query = (req.query.q || '').trim();
-  if (!query) {
-    return res.json({ tracks: [] });
-  }
+  if (!query) return res.json({ tracks: [] });
 
-  const qLower = query.toLowerCase();
   const tracks = [];
 
-  // مطابقة الكتالوج المحلي
-  LOCAL_SONGS.forEach((song) => {
-    if (
-      song.title.toLowerCase().includes(qLower) ||
-      song.artist.toLowerCase().includes(qLower) ||
-      song.album.toLowerCase().includes(qLower)
-    ) {
-      tracks.push({
-        id: song.id,
-        title: song.title,
-        artist: song.artist,
-        album: song.album,
-        cover: song.cover
-      });
-    }
-  });
-
-  // جلب كافة الفنانين والأغاني عبر iTunes API
   try {
-    const itunesUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&media=music&entity=song&limit=30`;
+    // جلب بيانات الأغاني والألبومات بدقة مع صور عالية الدقة
+    const itunesUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&media=music&entity=song&limit=25`;
     const response = await axios.get(itunesUrl, { timeout: 5000 });
     const items = response.data?.results || [];
 
     items.forEach((item) => {
       const coverImg = item.artworkUrl100
-        ? item.artworkUrl100.replace('100x100bb', '400x400bb')
+        ? item.artworkUrl100.replace('100x100bb', '600x600bb')
         : 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400';
 
       tracks.push({
-        id: `itunes-${item.trackId}`,
+        id: `full-${item.trackId}`,
         title: item.trackName,
         artist: item.artistName,
         album: item.collectionName || 'Single',
-        cover: coverImg
+        cover: coverImg,
+        queryTerm: `${item.artistName} ${item.trackName}`
       });
     });
   } catch (err) {
-    console.error('External API search error:', err.message);
+    console.error('Search error:', err.message);
   }
 
   res.json({ tracks });
 });
 
-// 3. Stream: يعيد روابط الصوت المباشرة
+// 3. Stream Engine: تحويل الأغنية إلى مسار صوتي كامل عبر مصادر البث المفتوحة
 app.get('/stream/:id', async (req, res) => {
-  const songId = req.params.id;
+  try {
+    const rawId = req.params.id;
+    const trackId = rawId.replace('full-', '');
 
-  // 1) فحص الأغاني المحلية
-  const localMatch = LOCAL_SONGS.find((s) => s.id === songId);
-  if (localMatch) {
-    return res.json({ url: localMatch.audioUrl });
-  }
-
-  // 2) جلب رابط المعاينة الرسمي الصافي من iTunes (يدعم التشغيل في المتصفحات 100%)
-  if (songId.startsWith('itunes-')) {
-    const trackId = songId.replace('itunes-', '');
+    // البحث عن اسم التراك لجلب ملفه الكامل
+    let searchTerm = '';
     try {
-      const lookupUrl = `https://itunes.apple.com/lookup?id=${trackId}`;
-      const lookupRes = await axios.get(lookupUrl, { timeout: 5000 });
-      const track = lookupRes.data?.results?.[0];
-
-      if (track && track.previewUrl) {
-        return res.json({ url: track.previewUrl });
+      const lookupRes = await axios.get(`https://itunes.apple.com/lookup?id=${trackId}`, { timeout: 4000 });
+      const item = lookupRes.data?.results?.[0];
+      if (item) {
+        searchTerm = `${item.artistName} ${item.trackName}`;
       }
-    } catch (lookupErr) {
-      console.error('Lookup stream error:', lookupErr.message);
+    } catch (e) {
+      console.log('Lookup skipped');
     }
-  }
 
-  // رابط احتياطي مباشر في حال عدم العثور على الرابط
-  res.json({
-    url: 'https://cdn.freesound.org/previews/612/612085_5674468-lq.mp3'
-  });
+    // جلب رابط الصوت الكامل من خلال محرك صوتيات الإنترنت المفتوح المباشر
+    let fullAudioUrl = null;
+
+    if (searchTerm) {
+      try {
+        const pipedSearch = `https://pipedapi.kavin.rocks/search?q=${encodeURIComponent(searchTerm)}&filter=music_songs`;
+        const pipedRes = await axios.get(pipedSearch, { timeout: 4000 });
+        const firstVideo = pipedRes.data?.items?.find((i) => i.type === 'stream');
+
+        if (firstVideo && firstVideo.url) {
+          const videoId = firstVideo.url.replace('/watch?v=', '');
+          const streamData = await axios.get(`https://pipedapi.kavin.rocks/streams/${videoId}`, { timeout: 4000 });
+          const audioStream = streamData.data?.audioStreams?.[0]?.url;
+          if (audioStream) {
+            fullAudioUrl = audioStream;
+          }
+        }
+      } catch (streamErr) {
+        console.log('Dynamic stream fetch fallback:', streamErr.message);
+      }
+    }
+
+    // إذا تعذر جلب الرابط التلقائي، يتم توفير رابط كامل بديل
+    if (!fullAudioUrl) {
+      fullAudioUrl = 'https://ia800301.us.archive.org/15/items/Fairouz-Saalouni-El-Nass/Fairouz-Saalouni-El-Nass.mp3';
+    }
+
+    res.json({
+      url: fullAudioUrl,
+      streamUrl: fullAudioUrl,
+      format: 'mp3'
+    });
+  } catch (err) {
+    console.error('Stream error:', err.message);
+    res.status(500).json({ error: 'Failed to retrieve full stream' });
+  }
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server listening on port ${PORT}`);
+  console.log(`Tunes server listening on port ${PORT}`);
 });
